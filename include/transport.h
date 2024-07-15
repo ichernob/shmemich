@@ -9,91 +9,105 @@
 
 #define PROTOCOL_VERSION 0
 
-typedef enum {
+typedef enum : uint8_t {
     MSG_REQ_CONNECT,
     MSG_RSP_CONNECT,
     MSG_REQ_DISCONNECT,
     MSG_RSP_DISCONNECT,
-    MSG_ERROR
+    MSG_ERROR            ///< Error message
 } MessageType;
+const char* type_map [] = {"MSG_REQ_CONNECT", "MSG_RSP_CONNECT", "MSG_REQ_DISCONNECT", "MSG_RSP_DISCONNECT", "MSG_ERROR"};
+std::ostream& operator << (std::ostream& os, const MessageType& mt) {
+    return os << type_map[mt];
+}
 
-typedef enum {
+typedef enum : uint8_t {
     STATUS_OK,           ///< Request was successfully proceed
-    STATUS_ERROR,
+    STATUS_ERROR,        ///< Error happened
     STATUS_CLIENTS_LIMIT_EXCEED,
     STATUS_NO_CLIENTS_TO_DISCONNECT,
 } MessageStatus;
+const char* status_map[] = {"STATUS_OK", "STATUS_ERROR", "STATUS_CLIENTS_LIMIT_EXCEED", "STATUS_NO_CLIENTS_TO_DISCONNECT"};
+std::ostream& operator << (std::ostream& os, const MessageStatus& ms) {
+    return os << status_map[ms];
+}
 
 typedef struct __attribute__((__packed__)) {
-    uint8_t version;     ///< Protocol version
-    uint8_t type;        ///< Message type
-    uint8_t size;        ///< Message payload size
-    uint8_t status;      ///< Message status
+    uint8_t version;      ///< Protocol version
+    MessageType type;     ///< Message type
+    uint8_t size;         ///< Message payload size
+    MessageStatus status; ///< Message status
 } Header;
+std::ostream& operator << (std::ostream& os, const Header& hdr) {
+    return os << "\nReceive message:"
+              << "\n\tProtocol Version: " << static_cast<int>(hdr.version)
+              << "\n\tMessage type: " << hdr.type
+              << "\n\tMessage size: " << static_cast<int>(hdr.size)
+              << "\n\tMessage status: " << hdr.status
+              << "\n";
+}
 
 typedef struct {
     Header header;        ///< Message header
 } Error;
 
-typedef struct {
-    Header header;        ///< Message header
-    MessageStatus status; ///< Service status
-    char shmempath[128];
-    int shmempathlen;
-} Status;
+union Message {
+    struct {
+        Header header;
+        MessageStatus status; ///< Service status
+        char shmempath[128];
+        int shmempathlen;
+    } status;
+} message;
 
 class Transport {
   public:
     Transport() {};
     ~Transport() {};
 
-    static Status createReqConnectMsg() {
-        Status req;
-        req.header.version = PROTOCOL_VERSION;
-        req.header.type = MSG_REQ_CONNECT;
-        req.header.size = 0;
-        req.header.status = STATUS_OK;
-        return req;
+    static Message createReqConnectMsg() {
+        Message msg;
+        msg.status.header.version = PROTOCOL_VERSION;
+        msg.status.header.type = MSG_REQ_CONNECT;
+        msg.status.header.size = 0;
+        msg.status.header.status = STATUS_OK;
+        return msg;
     }
-    static Status createRspConnectMsg(
-        Header* request, MessageStatus status
-    ) {
-        Status resp;
-        resp.header.version = PROTOCOL_VERSION;
-        resp.header.type = MSG_RSP_CONNECT;
-        resp.header.size = 4;
-        resp.header.status = STATUS_OK;
-        resp.status = status;
-        return resp;
+    static Message createRspConnectMsg(MessageStatus status) {
+        Message msg;
+        msg.status.header.version = PROTOCOL_VERSION;
+        msg.status.header.type = MSG_RSP_CONNECT;
+        msg.status.header.size = 4;
+        msg.status.header.status = STATUS_OK;
+        msg.status.status = status;
+        return msg;
     }
 
-    static Status createReqDisconnectMsg() {
-        Status req;
-        req.header.version = PROTOCOL_VERSION;
-        req.header.type = MSG_REQ_DISCONNECT;
-        req.header.size = 0;
-        req.header.status = STATUS_OK;
+    static Message createReqDisconnectMsg() {
+        Message req;
+        req.status.header.version = PROTOCOL_VERSION;
+        req.status.header.type = MSG_REQ_DISCONNECT;
+        req.status.header.size = 0;
+        req.status.header.status = STATUS_OK;
         return req;
     }
-    static Status createRspDisconnectMsg(
-        Header* request, MessageStatus status
-    ) {
-        Status resp;
-        resp.header.version = PROTOCOL_VERSION;
-        resp.header.type = MSG_RSP_DISCONNECT;
-        resp.header.size = 4;
-        resp.header.status = STATUS_OK;
-        resp.status = status;
-        return resp;
+    static Message createRspDisconnectMsg(MessageStatus status) {
+        Message rsp;
+        rsp.status.header.version = PROTOCOL_VERSION;
+        rsp.status.header.type = MSG_RSP_DISCONNECT;
+        rsp.status.header.size = 4;
+        rsp.status.header.status = STATUS_OK;
+        rsp.status.status = status;
+        return rsp;
     }
 
-    static Error createErrorMsg(Header* request) {
-        Error resp;
-        resp.header.version = PROTOCOL_VERSION;
-        resp.header.type = MSG_ERROR;
-        resp.header.size = 0;
-        resp.header.status = STATUS_ERROR;
-        return resp;
+    static Message createErrorMsg() {
+        Message rsp;
+        rsp.status.header.version = PROTOCOL_VERSION;
+        rsp.status.header.type = MSG_ERROR;
+        rsp.status.header.size = 0;
+        rsp.status.header.status = STATUS_ERROR;
+        return rsp;
     }
 
 }; // class Transport

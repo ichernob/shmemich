@@ -1,13 +1,13 @@
 #include <signal.h>
 #include <ctype.h>
 #include <fcntl.h>
-#include <stdio.h>//not neede ??
+#include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
 #include <unistd.h>
 #include <string.h>
-#include <sys/stat.h>
 
+#include <sys/stat.h>
 #include "pshm_server.h"
 #include "transport.h"
 
@@ -60,48 +60,61 @@ void PshmServer::processMessage(int clientFd) {
     cout << "Received " << numBytes << " bytes" << endl;
 
     if (numBytes > 0) {
-        Header* header = reinterpret_cast<Header*>(buffer);
-        cout << "\nReceive message:" << endl;
-        cout << "\tVersion: " << static_cast<int>(header->version) << endl;
-        cout << "\tMessage type: " << static_cast<int>(header->type) << endl;
-        cout << "\tMessage size: " << static_cast<int>(header->size) << endl;
-        cout << "\tMessage status: " << static_cast<int>(header->status) << endl;
+        Message* rsp = reinterpret_cast<Message*>(buffer);
+        Header header = rsp->status.header;
+        cout << header;
 
-        switch (header->type) {
+        switch (header.type) {
         case MSG_REQ_CONNECT:
             cout << "Receive REQ_CONNECT message" << endl;
             if (connected_cnt < MAX_PENDING_CONNECTIONS) {
                 cout << "\tSending path to shared memory: " << shmempath << " ..." << endl;
-                Status resp = Transport::createRspConnectMsg(header, STATUS_OK);
-                strcpy(resp.shmempath, shmempath);
-                resp.shmempathlen = strlen(shmempath);
-                send(clientFd, &resp, sizeof(resp), 0);
+                Message resp = Transport::createRspConnectMsg(STATUS_OK);
+                strcpy(resp.status.shmempath, shmempath);
+                resp.status.shmempathlen = strlen(shmempath);
+
+                if (send(clientFd, &resp, sizeof(resp), 0) == -1) {
+                    release_resources();
+                    perror_exit("Error while sending RSP_CONNECT");
+                }
                 connected_cnt++;
             } else {
                 cout << "\tReached limit for available connections, sending back ERROR" << endl;
-                Error resp = Transport::createErrorMsg(header);
-                resp.header.status = STATUS_CLIENTS_LIMIT_EXCEED;
-                send(clientFd, &resp, sizeof(resp), 0);
+                Message resp = Transport::createErrorMsg();
+                resp.status.header.status = STATUS_CLIENTS_LIMIT_EXCEED;
+                if (send(clientFd, &resp, sizeof(resp), 0) == -1) {
+                    release_resources();
+                    perror_exit("Error while sending ERROR");
+                }
             }
             break;
         case MSG_REQ_DISCONNECT:
             cout << "Receive REQ_DISCONNECT message" << endl;
             if (connected_cnt > 0) {
-                cout << "\tProcessing REQ_DOSCONNECT message" << endl;
-                Status resp = Transport::createRspDisconnectMsg(header, STATUS_OK);
-                send(clientFd, &resp, sizeof(resp), 0);
+                cout << "\tProcessing REQ_DISCONNECT message" << endl;
+                Message resp = Transport::createRspDisconnectMsg(STATUS_OK);
+                if (send(clientFd, &resp, sizeof(resp), 0) == -1) {
+                    release_resources();
+                    perror_exit("Error while sending RSP_DISCONNECT");
+                }
                 connected_cnt--;
             } else {
                 cout << "\tNo any connections, sending back ERROR" << endl;
-                Error resp = Transport::createErrorMsg(header);
-                resp.header.status = STATUS_NO_CLIENTS_TO_DISCONNECT;
-                send(clientFd, &resp, sizeof(resp), 0);
+                Message resp = Transport::createErrorMsg();
+                resp.status.header.status = STATUS_NO_CLIENTS_TO_DISCONNECT;
+                if (send(clientFd, &resp, sizeof(resp), 0) == -1) {
+                    release_resources();
+                    perror_exit("Error while sending ERROR");
+                }
             }
             break;
         default:
             cout << "Receive unsupported message" << endl;
-            Error resp = Transport::createErrorMsg(header);
-            send(clientFd, &resp, sizeof(resp), 0);
+            Message resp = Transport::createErrorMsg();
+            if (send(clientFd, &resp, sizeof(resp), 0) == -1) {
+                release_resources();
+                perror_exit("Error while sending ERROR");
+            }
             break;
         }
     }
@@ -148,13 +161,20 @@ void PshmServer::core() {
             close(clientFd);
         }
         if (connected_cnt > 0) {
+            struct timespec ts;
+            if (clock_gettime(CLOCK_REALTIME, &ts) == -1)
+               perror_exit("clock_gettime");
+            ts.tv_sec += 1; // wait no more than 100 ms
             cout << "  Waiting for sem1 to increment ..." << endl;
-            if (sem_wait(&shm_ptr->sem1) == -1) {//wait for signal from sender.
-                release_resources();
-                perror_exit("sem_wait: spool-signal-sem");
+            if (sem_timedwait(&shm_ptr->sem1, &ts) == -1) {//wait for signal from sender.
+                if (errno == ETIMEDOUT || errno == EINTR) {
+                    cout << "    Time out while waiting for sem1 to increment ..." << endl;
+                    continue;
+                } else {
+                    release_resources();
+                    perror_exit("sem_wait: spool-signal-sem");
+                }
             }
-            // cout << "  Processing shared block update ..." << endl;
-
             // bf_log_ix used by logger to count buffer to take.
             strcpy(buffer, shm_ptr->bfs[shm_ptr->bf_log_ix]);
             (shm_ptr->bf_log_ix)++;
@@ -166,7 +186,6 @@ void PshmServer::core() {
                 release_resources();
                 perror_exit("sem_post: buffer-count-sem");
             }
-            // cout << "  Incremented sem2 ..." << endl;
             if (write(log_fd, buffer, strlen(buffer)) != strlen(buffer)) {
                 release_resources();
                 perror_exit("write: logfile");
@@ -194,8 +213,7 @@ void PshmServer::release_resources() {
     }
 }
 
-int PshmServer::quit()
-{
+int PshmServer::quit() {
     release_resources();
     cout << "Stopping the Server ..." << endl;
     raise(SIGUSR1);
@@ -228,7 +246,7 @@ void PshmServer::prepare() {
         release_resources();
         perror_exit("sem_init-sem1");
     }
-    if (sem_init(&shm_ptr->sem2, 1, MAX_BFS) == -1) {
+    if (sem_init(&shm_ptr->sem2, 1, MAX_BFS) == -1) {//todo; replace maxbfs by 1
         release_resources();
         perror_exit("sem_init-sem2");
     }
@@ -238,8 +256,7 @@ void PshmServer::prepare() {
     }
 }
 
-void usage(char *name)
-{
+void usage(char *name) {
     cout << "Usage: " << name << " /shm-path" << endl;
     exit(EXIT_FAILURE);
 }

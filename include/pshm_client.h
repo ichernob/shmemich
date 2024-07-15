@@ -9,9 +9,6 @@
 
 #include "transport.h"
 
-/**
- * \brief Client class
- */
 class PshmClient
 {
 
@@ -33,6 +30,8 @@ class PshmClient
     void processMessage(); ///< Process incomming message
     void prepare();
     void core();
+    int createCommunicationServices();   ///< Create transport
+    void destroyCommunicationServices(); ///< Destroy transport
 
   public:
     PshmClient() = delete;
@@ -41,7 +40,5 @@ class PshmClient
 
     int run();                           ///< Function to start service
     int quit();                          ///< Function to stop service
-    int createCommunicationServices();   ///< Create transport
-    void destroyCommunicationServices(); ///< Destroy transport
 
 }; // class PshmClient

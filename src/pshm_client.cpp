@@ -43,28 +43,23 @@ void PshmClient::processMessage() {
     cout << "Received " << numBytes << " bytes" << endl;
 
     if (numBytes > 0) {
-        Header* header = reinterpret_cast<Header*>(buffer);
-        Status* status = reinterpret_cast<Status*>(buffer);
-        cout << "Receive message:" << endl;
-        cout << "\tVersion: " << static_cast<int>(header->version) << endl;
-        cout << "\tMessage type: " << static_cast<int>(header->type) << endl;
-        cout << "\tMessage size: " << static_cast<int>(header->size) << endl;
-        cout << "\tMessage status: " << static_cast<int>(header->status) << endl;
+        Message* rsp = reinterpret_cast<Message*>(buffer);
+        Header header = rsp->status.header;
+        cout << header;
 
-        switch (header->type) {
+        switch (header.type) {
         case MSG_RSP_CONNECT:
-            cout << "Received RSP_CONNECT message: " << static_cast<int>(status->status) << endl;
-            cout << "\tShmempath: " << status->shmempath << endl;
-            cout << "\tLen: " << status->shmempathlen << endl;
+            cout << "Received RSP_CONNECT message: " << static_cast<int>(rsp->status.status) << endl;
+            cout << "\tShmempath: " << rsp->status.shmempath << endl;
+            cout << "\tLen: " << rsp->status.shmempathlen << endl;
             if (shmempath == NULL) {
-                shmempath = (char *) malloc(status->shmempathlen);
+                shmempath = (char *) malloc(rsp->status.shmempathlen);
             }
-            strncpy(shmempath, status->shmempath, status->shmempathlen);
+            strncpy(shmempath, rsp->status.shmempath, rsp->status.shmempathlen);
             prepare();
             break;
         case MSG_RSP_DISCONNECT:
-            cout << "Received RSP_DISCONNECT message: " << static_cast<int>(status->status) << endl;
-            // todo: process disconnect
+            cout << "Received RSP_DISCONNECT message: " << static_cast<int>(rsp->status.status) << endl;
             break;
         case MSG_ERROR:
             cout << "Receive ERROR message" << endl;
@@ -87,7 +82,7 @@ int PshmClient::run() {
 
     cout << "Communication service was successfully created" << endl;
 
-    Status req = Transport::createReqConnectMsg();
+    Message req = Transport::createReqConnectMsg();
     if (send(_clientFd, &req/*message*/, sizeof(req)/*length*/, 0/*flags*/) == -1) {
         cout << "Failed to send message to Server" << endl;
         return -1;
@@ -95,7 +90,20 @@ int PshmClient::run() {
     processMessage();
     if (prepared) {
         core();
+        cout << "Exit from CORE() ..." << endl;
     }
+    if (createCommunicationServices() == -1) {
+        cout << "Failed to create communication service" << endl;
+        return -1;
+    }
+    cout << "Creating REQ_DISCONNECT ..." << endl;
+    Message req_disconnect = Transport::createReqDisconnectMsg();
+    if (send(_clientFd, &req_disconnect/*message*/, sizeof(req_disconnect)/*length*/, 0/*flags*/) == -1) {
+        cout << "Failed to send message to Server" << endl;
+        return -1;
+    }
+    cout << "Sent REQ_DISCONNECT ..." << endl;
+    processMessage();
 
     destroyCommunicationServices();
     cout << "Client was stoped" << endl;
@@ -131,7 +139,7 @@ void PshmClient::core() {
     char buffer[BF_SZ], *cp;
 
     cout << "Running core functionality ..." << endl;
-    const int EPOCHS = 10;
+    const int EPOCHS = 3;
     for (int epoch = 0; epoch < EPOCHS; epoch++) {
         cout << "    Waiting for sem2 to increment ..." << endl;
         if (sem_wait(&shm_ptr->sem2) == -1) {//wait for signal from logger.
@@ -179,7 +187,6 @@ int main(int argc, char *argv[]) {
     size_t tag_len;
     struct shmblock *shm_ptr;
 
-    // 3. Add disconnect req after iterations
     if (argc != 2) {
         usage(argv[0]);
     }

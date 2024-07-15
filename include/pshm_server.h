@@ -23,29 +23,32 @@ private:
 
     // File descriptor for the server socket
     int _serverFd;
-    // File descriptor for the client socket
-    // int _clientFd;
     // Structure to hold the address information for Unix domain socket communication
     struct sockaddr_un _address;
     // Length of the address structure
     int _addrlen;
     // Socket path
     std::string _socketPath { "/tmp/unix.socket" };
+    // Loop status
     bool _loop { true };
 
-    void processMessage(int clientFd); ///< Process incomming request
+    void processMessage(int clientFd);   ///< Process incomming request
     void release_resources();
-
-public:
-    PshmServer() = delete;
-    PshmServer(const char *shmempath);
-    ~PshmServer();
-
-    void prepare();                      ///< Function to prepare service
-    int run();                           ///< Function to start service
-    int quit();                          ///< Function to stop service
     void core();                         ///< Core function
     void createCommunicationServices();  ///< Create transport
     void destroyCommunicationServices(); ///< Destroy transport
+
+public:
+    PshmServer() = delete;
+    PshmServer(const PshmServer&) = delete;                 ///< Copy Constructor
+    PshmServer& operator= (const PshmServer&) = delete;     ///< Assignment operator
+    PshmServer(PshmServer&&) = delete;                      ///< Move constructor
+    PshmServer& operator= (PshmServer&&) = delete;          ///< Move assignment operator
+    PshmServer(const char *shmempath);                      ///< Constructor
+    ~PshmServer();                                          ///< Destructor
+
+    void prepare();
+    int run();                           ///< Function to start service
+    int quit();                          ///< Function to stop service
 
 }; // class PshmServer
