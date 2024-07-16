@@ -55,13 +55,14 @@ void PshmServer::destroyCommunicationServices() {
 }
 
 void PshmServer::processMessage(int clientFd) {
-    char buffer[256];
-    int numBytes = read(clientFd, buffer, sizeof(buffer));
+    char bfr[MSG_LENGTH];
+    int numBytes = read(clientFd, bfr, sizeof(bfr));
     cout << "Received " << numBytes << " bytes" << endl;
 
     if (numBytes > 0) {
-        Message* rsp = reinterpret_cast<Message*>(buffer);
-        Header header = rsp->status.header;
+        Message *msg_ptr;
+        msg_ptr = (Message *)bfr;
+        Header header = msg_ptr->status.header;
         cout << header;
 
         switch (header.type) {
@@ -69,11 +70,11 @@ void PshmServer::processMessage(int clientFd) {
             cout << "Receive REQ_CONNECT message" << endl;
             if (connected_cnt < MAX_PENDING_CONNECTIONS) {
                 cout << "\tSending path to shared memory: " << shmempath << " ..." << endl;
-                Message resp = Transport::createRspConnectMsg(STATUS_OK);
-                strcpy(resp.status.shmempath, shmempath);
-                resp.status.shmempathlen = strlen(shmempath);
+                Message rsp = Transport::createRspConnectMsg(STATUS_OK);
+                strcpy(rsp.status.shmempath, shmempath);
+                rsp.status.shmempathlen = strlen(shmempath);
 
-                if (send(clientFd, &resp, sizeof(resp), 0) == -1) {
+                if (send(clientFd, &rsp, sizeof(rsp), 0) == -1) {
                     release_resources();
                     perror_exit("Error while sending RSP_CONNECT");
                 }
@@ -81,7 +82,7 @@ void PshmServer::processMessage(int clientFd) {
             } else {
                 cout << "\tReached limit for available connections, sending back ERROR" << endl;
                 Message resp = Transport::createErrorMsg();
-                resp.status.header.status = STATUS_CLIENTS_LIMIT_EXCEED;
+                resp.status.servicestatus = STATUS_CLIENTS_LIMIT_EXCEED;
                 if (send(clientFd, &resp, sizeof(resp), 0) == -1) {
                     release_resources();
                     perror_exit("Error while sending ERROR");
@@ -92,17 +93,17 @@ void PshmServer::processMessage(int clientFd) {
             cout << "Receive REQ_DISCONNECT message" << endl;
             if (connected_cnt > 0) {
                 cout << "\tProcessing REQ_DISCONNECT message" << endl;
-                Message resp = Transport::createRspDisconnectMsg(STATUS_OK);
-                if (send(clientFd, &resp, sizeof(resp), 0) == -1) {
+                Message rsp = Transport::createRspDisconnectMsg(STATUS_OK);
+                if (send(clientFd, &rsp, sizeof(rsp), 0) == -1) {
                     release_resources();
                     perror_exit("Error while sending RSP_DISCONNECT");
                 }
                 connected_cnt--;
             } else {
                 cout << "\tNo any connections, sending back ERROR" << endl;
-                Message resp = Transport::createErrorMsg();
-                resp.status.header.status = STATUS_NO_CLIENTS_TO_DISCONNECT;
-                if (send(clientFd, &resp, sizeof(resp), 0) == -1) {
+                Message rsp = Transport::createErrorMsg();
+                rsp.status.servicestatus = STATUS_NO_CLIENTS_TO_DISCONNECT;
+                if (send(clientFd, &rsp, sizeof(rsp), 0) == -1) {
                     release_resources();
                     perror_exit("Error while sending ERROR");
                 }
@@ -110,8 +111,8 @@ void PshmServer::processMessage(int clientFd) {
             break;
         default:
             cout << "Receive unsupported message" << endl;
-            Message resp = Transport::createErrorMsg();
-            if (send(clientFd, &resp, sizeof(resp), 0) == -1) {
+            Message rsp = Transport::createErrorMsg();
+            if (send(clientFd, &rsp, sizeof(rsp), 0) == -1) {
                 release_resources();
                 perror_exit("Error while sending ERROR");
             }

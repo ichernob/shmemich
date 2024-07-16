@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #define PROTOCOL_VERSION 0
+#define MSG_LENGTH 137
 
 typedef enum : uint8_t {
     MSG_REQ_CONNECT,
@@ -52,13 +53,14 @@ typedef struct {
 } Error;
 
 union Message {
-    struct {
+    char buffer[MSG_LENGTH];  ///< Sum of lengths of nested structures fileds: 128 + 4 + 1 + 1 + 1 + 1 + 1
+    struct __attribute__ ((__packed__)) {
         Header header;
-        MessageStatus status; ///< Service status
+        MessageStatus servicestatus;
         char shmempath[128];
         int shmempathlen;
     } status;
-} message;
+};
 
 class Transport {
   public:
@@ -79,7 +81,7 @@ class Transport {
         msg.status.header.type = MSG_RSP_CONNECT;
         msg.status.header.size = 4;
         msg.status.header.status = STATUS_OK;
-        msg.status.status = status;
+        msg.status.servicestatus = status;
         return msg;
     }
 
@@ -97,7 +99,7 @@ class Transport {
         rsp.status.header.type = MSG_RSP_DISCONNECT;
         rsp.status.header.size = 4;
         rsp.status.header.status = STATUS_OK;
-        rsp.status.status = status;
+        rsp.status.servicestatus = status;
         return rsp;
     }
 
@@ -106,7 +108,7 @@ class Transport {
         rsp.status.header.version = PROTOCOL_VERSION;
         rsp.status.header.type = MSG_ERROR;
         rsp.status.header.size = 0;
-        rsp.status.header.status = STATUS_ERROR;
+        rsp.status.servicestatus = STATUS_ERROR;
         return rsp;
     }
 

@@ -38,28 +38,29 @@ void PshmClient::destroyCommunicationServices() {
 }
 
 void PshmClient::processMessage() {
-    char buffer[256];
-    int numBytes = read(_clientFd, buffer, sizeof(buffer));
+    char bfr[MSG_LENGTH];
+    int numBytes = read(_clientFd, bfr, sizeof(bfr));
     cout << "Received " << numBytes << " bytes" << endl;
 
     if (numBytes > 0) {
-        Message* rsp = reinterpret_cast<Message*>(buffer);
-        Header header = rsp->status.header;
+        Message *msg_ptr;
+        msg_ptr = (Message *)bfr;
+        Header header = msg_ptr->status.header;
         cout << header;
 
         switch (header.type) {
         case MSG_RSP_CONNECT:
-            cout << "Received RSP_CONNECT message: " << static_cast<int>(rsp->status.status) << endl;
-            cout << "\tShmempath: " << rsp->status.shmempath << endl;
-            cout << "\tLen: " << rsp->status.shmempathlen << endl;
+            cout << "Received RSP_CONNECT message: " << msg_ptr->status.servicestatus << endl;
+            cout << "\tShmempath: " << msg_ptr->status.shmempath << endl;
+            cout << "\tLen: " << msg_ptr->status.shmempathlen << endl;
             if (shmempath == NULL) {
-                shmempath = (char *) malloc(rsp->status.shmempathlen);
+                shmempath = (char *) malloc(msg_ptr->status.shmempathlen);
             }
-            strncpy(shmempath, rsp->status.shmempath, rsp->status.shmempathlen);
+            strncpy(shmempath, msg_ptr->status.shmempath, msg_ptr->status.shmempathlen);
             prepare();
             break;
         case MSG_RSP_DISCONNECT:
-            cout << "Received RSP_DISCONNECT message: " << static_cast<int>(rsp->status.status) << endl;
+            cout << "Received RSP_DISCONNECT message: " << msg_ptr->status.servicestatus << endl;
             break;
         case MSG_ERROR:
             cout << "Receive ERROR message" << endl;
@@ -158,7 +159,7 @@ void PshmClient::core() {
         }
         // bf_ix used by senders to avoid data override.
         sprintf(shm_ptr->bfs[shm_ptr->bf_ix], "%s\t%d\t[%s]: Batch %d\n", cp, getpid(), _tag, epoch);
-        (shm_ptr->bf_ix)++;//TODO: get rid of indexes. Switch to offsets.
+        (shm_ptr->bf_ix)++;
         if (shm_ptr->bf_ix == MAX_BFS) {
             shm_ptr->bf_ix = 0;
         }
