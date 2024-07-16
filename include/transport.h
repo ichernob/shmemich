@@ -8,7 +8,7 @@
 #include <unistd.h>
 
 #define PROTOCOL_VERSION 0
-#define MSG_LENGTH 137
+#define MSG_LENGTH 141
 
 typedef enum : uint8_t {
     MSG_REQ_CONNECT,
@@ -53,12 +53,13 @@ typedef struct {
 } Error;
 
 union Message {
-    char buffer[MSG_LENGTH];  ///< Sum of lengths of nested structures fileds: 128 + 4 + 1 + 1 + 1 + 1 + 1
+    char buffer[MSG_LENGTH];  ///< Sum of lengths of nested structures fileds: 128 + 4 +4 + 1 + 1 + 1 + 1 + 1
     struct __attribute__ ((__packed__)) {
         Header header;
         MessageStatus servicestatus;
         char shmempath[128];
         int shmempathlen;
+        int mmap_offset;
     } status;
 };
 

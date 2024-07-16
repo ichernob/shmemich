@@ -73,6 +73,9 @@ void PshmServer::processMessage(int clientFd) {
                 Message rsp = Transport::createRspConnectMsg(STATUS_OK);
                 strcpy(rsp.status.shmempath, shmempath);
                 rsp.status.shmempathlen = strlen(shmempath);
+                int mmapoffset = 3 * sizeof(__SIZEOF_SEM_T) + connected_cnt * sizeof(ctrl_buffer);
+                cout << "\tSending Memory-Map offset=" << mmapoffset << endl;
+                rsp.status.mmap_offset = connected_cnt * sizeof(ctrl_buffer);
 
                 if (send(clientFd, &rsp, sizeof(rsp), 0) == -1) {
                     release_resources();
@@ -176,11 +179,13 @@ void PshmServer::core() {
                     perror_exit("sem_wait: spool-signal-sem");
                 }
             }
-            // bf_log_ix used by logger to count buffer to take.
-            strcpy(buffer, shm_ptr->bfs[shm_ptr->bf_log_ix]);
-            (shm_ptr->bf_log_ix)++;
-            if (shm_ptr->bf_log_ix == MAX_BFS) {
-                shm_ptr->bf_log_ix = 0;
+            for (int ix = 0; ix < connected_cnt; ix++) {
+                if (shm_ptr->ctrl_buffers[ix].flag == READY_FOR_READ) {
+                    shm_ptr->ctrl_buffers[ix].flag = READING_IN_PROGRESS;
+                    strcpy(buffer, shm_ptr->ctrl_buffers[ix].buffer);
+                    shm_ptr->ctrl_buffers[ix].flag = READY_FOR_WRITE;
+                    break;
+                }
             }
 
             if (sem_post(&shm_ptr->sem2) == -1) {//signal to any sender.
@@ -241,6 +246,10 @@ void PshmServer::prepare() {
     if (shm_ptr == MAP_FAILED) {
         release_resources();
         perror_exit("mmap");
+    }
+
+    for (int ix = 0; ix < MAX_BFS; ix++) {
+        shm_ptr->ctrl_buffers[ix].flag = READY_FOR_WRITE;
     }
 
     if (sem_init(&shm_ptr->sem1, 1, 0) == -1) {

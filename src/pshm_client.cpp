@@ -9,7 +9,6 @@
 #include <signal.h>
 #include <ctype.h>
 
-#include "pshm_common.h"
 #include "pshm_client.h"
 #include "transport.h"
 
@@ -43,20 +42,23 @@ void PshmClient::processMessage() {
     cout << "Received " << numBytes << " bytes" << endl;
 
     if (numBytes > 0) {
-        Message *msg_ptr;
-        msg_ptr = (Message *)bfr;
+        Message *msg_ptr = (Message *)bfr;
+        mmap_offset = msg_ptr->status.mmap_offset;
         Header header = msg_ptr->status.header;
         cout << header;
 
         switch (header.type) {
         case MSG_RSP_CONNECT:
+            // mmap_offset = msg_ptr->status.mmap_offset;
             cout << "Received RSP_CONNECT message: " << msg_ptr->status.servicestatus << endl;
             cout << "\tShmempath: " << msg_ptr->status.shmempath << endl;
             cout << "\tLen: " << msg_ptr->status.shmempathlen << endl;
+            cout << "\tMemory Map offset: " << mmap_offset << endl;
             if (shmempath == NULL) {
                 shmempath = (char *) malloc(msg_ptr->status.shmempathlen);
             }
             strncpy(shmempath, msg_ptr->status.shmempath, msg_ptr->status.shmempathlen);
+            // mmap_offset = msg_ptr->status.mmap_offset;
             prepare();
             break;
         case MSG_RSP_DISCONNECT:
@@ -132,6 +134,7 @@ void PshmClient::prepare() {
     if (shm_ptr == MAP_FAILED) {
         perror_exit("mmap");
     }
+    allowed_buffer = (ctrl_buffer *)((char *)shm_ptr + mmap_offset);
     prepared = true;
     cout << "Client prepared ..." << endl;
 }
@@ -151,17 +154,16 @@ void PshmClient::core() {
             perror_exit("sem_wait: mutex-sem");
         }
 
-        time_t now = time(NULL);
-        cp = ctime(&now);
-        int cplen = strlen(cp);
-        if (*(cp + cplen - 1) == '\n') {
-            *(cp + cplen - 1) = '\0';
-        }
-        // bf_ix used by senders to avoid data override.
-        sprintf(shm_ptr->bfs[shm_ptr->bf_ix], "%s\t%d\t[%s]: Batch %d\n", cp, getpid(), _tag, epoch);
-        (shm_ptr->bf_ix)++;
-        if (shm_ptr->bf_ix == MAX_BFS) {
-            shm_ptr->bf_ix = 0;
+        if (allowed_buffer->flag == READY_FOR_WRITE) {
+            time_t now = time(NULL);
+            cp = ctime(&now);
+            int cplen = strlen(cp);
+            if (*(cp + cplen - 1) == '\n') {
+                *(cp + cplen - 1) = '\0';
+            }
+            allowed_buffer->flag = WRITING_IN_PROGRESS;
+            sprintf(allowed_buffer->buffer, "%s\t%d\t[%s]: Batch %d\n", cp, getpid(), _tag, epoch);
+            allowed_buffer->flag = READY_FOR_READ;
         }
 
         cout << "    Incremented sem3 ..." << endl;

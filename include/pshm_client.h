@@ -8,12 +8,13 @@
 #include <unistd.h>
 
 #include "transport.h"
+#include "pshm_common.h"
 
-class PshmClient
-{
-
+class PshmClient {
   private:
+    ctrl_buffer *allowed_buffer = NULL;
     char *shmempath = NULL;
+    int mmap_offset = -1;
     const char* _tag;
     bool prepared {false};
     struct shmblock *shm_ptr;
